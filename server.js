@@ -1,3 +1,4 @@
+require('dotenv').config(); 
 var express = require("express");
 
 var app = express();
@@ -6,25 +7,45 @@ var mysql = require("mysql");
 
 var bodyParser=require("body-parser");
 
-var cors= require("cors");
+const cors = require("cors");
+app.use(cors());
+const allowedOrigins = ['http://10.0.2.2:9000',];
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    optionsSuccessStatus: 204,
+}));
+
+app.use(bodyParser.json());
 
 // json parser
 var jsonParcer = bodyParser.json();
+
 // url encoded
 var urlencodedParcer = bodyParser.urlencoded({extended:false});
 
-app.use(cors());
+
 
 var con = mysql.createConnection({
-    host:"0.0.0.0",
-    user: "root",
-    password:"",
-    database:"sale_db"
+    host: process.env.DB_HOST || "0.0.0.0",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "",
+    database: process.env.DB_NAME || "sale_db"
 });
-con.connect((err)=>{
-    if(err) throw err;
-    console.log("connected to database")
-})
+con.connect((err) => {
+    if (err) {
+        console.error("Error connecting to database:", err);
+        process.exit(1); 
+    }
+    console.log("Connected to database");
+});
+
 // get full data
 app.get("/details",function(req,res){
 
@@ -43,9 +64,8 @@ app.get("/details/:id",function(req,res){
     })
 })
 
-// post new details
-app.post("/data/add",jsonParcer,function(req,res){
-
+app.post("/data/add", jsonParcer, function (req, res) {
+    console.log("Received POST request:", req.body);
     let name = req.body.name;
     let address = req.body.address;
     let phone_number = req.body.phone_number;
@@ -53,14 +73,20 @@ app.post("/data/add",jsonParcer,function(req,res){
     let country = req.body.country;
 
     
-let qr =  ` insert into details(name,address,phone_number,email,country) values('${name}','${address}',${phone_number},'${email}','${country}')`;
-con.query(qr,(err,result)=>{
-    if(err){
-        res.send({error:"Operation Failed"})
-    }else{
-        res.send({success: "Operation Completed"});
+    if (!name || name.trim() === "") {
+        return res.status(400).json({ error: "Name cannot be empty" });
     }
-})
+
+    let qr = `INSERT INTO details(name, address, phone_number, email, country) VALUES (?, ?, ?, ?, ?)`;
+
+    con.query(qr, [name, address, phone_number, email, country], (err, result) => {
+        if (err) {
+            console.error("Error executing SQL query:", err);
+            res.status(500).json({ error: "Internal Server Error", details: err.message });
+        } else {
+            res.status(200).json({ success: "Operation Completed" });
+        }
+    });
 });
 
 // update details
@@ -96,12 +122,14 @@ app.delete("/data/:id",function(req,res){
 
 })
 
-
-
 app.get("/",function(req,res){
     res.send("<h1>Hello<h1>")
 });
+const PORT = process.env.PORT || 9000;
+app.listen(PORT, function () {
+    console.log(`Server started on port ${PORT}`);
+});
 
-app.listen(9000,function(){
-    console.log("Server started")
-})
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server started on port ${PORT}`);
+  });
